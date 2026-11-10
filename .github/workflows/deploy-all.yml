@@ -1,0 +1,276 @@
+# 106 一键部署：契约(gfcc) → 核(thomas-core) → 宿主(looma) → 基础设施 → 验收
+#
+# 为什么按这个顺序：looma 调核（THOMAS_CORE_URL=127.0.0.1:5300），核吃 gfcc 的契约钉。
+# 反了就出现「宿主起来了但核还没换」的假绿。
+#
+# 本工作流只做编排，不持有部署逻辑：
+#   - 应用部署仍由各仓自己的 deploy-106.yml 完成（CI 私钥、指纹、smoke 都不搬家）
+#   - 基础设施仍由 infra/（= 106-deploy-kit）的 bootstrap.sh 完成（幂等）
+#   - 本工作流只负责「按顺序调、等到结束、把结果摊在一张表上」
+#
+# 需要配的东西见 README.md「首次上线」一节。
+
+name: deploy-all
+
+on:
+  workflow_dispatch:
+    inputs:
+      gfcc_ref:
+        description: 'gfcc tag/SHA。填了就先把契约钉进核再部署（留空 = 不动 gfcc）'
+        required: false
+        default: ''
+      core_ref:
+        description: 'thomas-core 分支'
+        required: false
+        default: 'main'
+      core_sha:
+        description: 'thomas-core 指定 commit（留空 = 分支头，会先跑测试）'
+        required: false
+        default: ''
+      looma_ref:
+        description: 'looma-zervi 分支'
+        required: false
+        default: 'feat/core-selfcontained'
+      looma_sha:
+        description: 'looma 指定 commit（留空 = 分支头，会先跑测试）'
+        required: false
+        default: ''
+      skip_core:
+        description: '跳过核部署（只动宿主）'
+        type: boolean
+        default: false
+      skip_looma:
+        description: '跳过宿主部署（只动核）'
+        type: boolean
+        default: false
+      run_infra:
+        description: '跑基础设施（幂等写 systemd/nginx/env 骨架）'
+        type: boolean
+        default: true
+      restart_services:
+        description: 'infra 后重启三服务（新单元/新内核只有重启才进进程）'
+        type: boolean
+        default: false
+      verify_only:
+        description: '只验收，不部署'
+        type: boolean
+        default: false
+
+concurrency:
+  group: deploy-all-106
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  DEPLOY106_HOST: ${{ vars.DEPLOY106_HOST || secrets.DEPLOY106_HOST }}
+  DEPLOY106_USER: ${{ vars.DEPLOY106_USER || secrets.DEPLOY106_USER || 'ubuntu' }}
+  DEPLOY106_SSH_KEY: ${{ secrets.DEPLOY106_SSH_KEY }}
+  DEPLOY106_HOST_FINGERPRINT: ${{ secrets.DEPLOY106_HOST_FINGERPRINT }}
+  GH_TOKEN: ${{ secrets.ORCH_TOKEN }}
+  KIT_DIR: /home/ubuntu/106-deploy-kit
+
+jobs:
+  # ─────────────────────────────────────────── 0. 体检（只读）
+  preflight:
+    name: 体检
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 配置自检
+        run: |
+          set -uo pipefail
+          miss=""
+          [ -n "${DEPLOY106_HOST:-}" ] || miss="$miss DEPLOY106_HOST"
+          [ -n "${DEPLOY106_SSH_KEY:-}" ] || miss="$miss DEPLOY106_SSH_KEY"
+          [ -n "${DEPLOY106_HOST_FINGERPRINT:-}" ] || miss="$miss DEPLOY106_HOST_FINGERPRINT"
+          [ -n "${GH_TOKEN:-}" ] || miss="$miss ORCH_TOKEN"
+          if [ -n "$miss" ]; then
+            echo "::error::缺少配置:$miss（见 README「首次上线」）"
+            exit 1
+          fi
+          echo "配置齐全；SSH 用户=$DEPLOY106_USER"
+
+      - name: 跨仓互斥检查（另有部署在跑就先退出）
+        run: |
+          set -uo pipefail
+          busy=""
+          for pair in "GenzLTD/thomas-core:deploy-106.yml" "GenzLTD/looma-zervi:deploy-106.yml"; do
+            repo="${pair%%:*}"; wf="${pair##*:}"
+            n=$(gh run list -R "$repo" -w "$wf" --limit 20 \
+                  --json databaseId,status \
+                  --jq '[.[]|select(.status=="in_progress" or .status=="queued")]|length')
+            echo "$repo/$wf 进行中 = ${n:-0}"
+            [ "${n:-0}" != "0" ] && busy="$busy $repo"
+          done
+          if [ -n "$busy" ]; then
+            echo "::error::以下仓库有部署正在跑，避免互相踩：$busy —— 等它结束再点"
+            exit 1
+          fi
+
+      - name: 线上现状 + 套件版本核对
+        run: |
+          set -uo pipefail
+          chmod +x scripts/106.sh
+          cat > /tmp/probe.sh <<'EOS'
+          echo "HOST=$(hostname)"
+          echo "UPTIME=$(uptime -s)"
+          echo "LOOMA=$(curl -s -m 5 http://127.0.0.1:5200/health | tr -d '\n' | sed -n 's/.*"git_commit": *"\([0-9a-f]\{7\}\).*/\1/p' | head -1)"
+          echo "CORE=$(curl -s -m 5 http://127.0.0.1:5300/health | tr -d '\n' | sed -n 's/.*"git_commit": *"\([0-9a-f]\{7\}\).*/\1/p' | head -1)"
+          echo "PORTAL=$(curl -s -m 5 -o /dev/null -w '%{http_code}' -H 'Host: szbolent.com' http://127.0.0.1/)"
+          echo "KIT_SHA=$(sha256sum /home/ubuntu/106-deploy-kit/bootstrap.sh 2>/dev/null | cut -c1-16)"
+          echo "KIT_VER=$(grep -m1 KIT_VERSION= /home/ubuntu/106-deploy-kit/bootstrap.sh 2>/dev/null | cut -d'"' -f2)"
+          EOS
+          OUT=$(./scripts/106.sh "$(cat /tmp/probe.sh)" 2>&1) || { echo "$OUT"; exit 1; }
+          echo "$OUT"
+          # 仓内副本与机器上的套件比 sha：不一致只告警（仓可能是新提交、机器还没跟上）
+          want=$(sha256sum infra/bootstrap.sh | cut -c1-16)
+          got=$(printf '%s\n' "$OUT" | sed -n 's/^KIT_SHA=//p')
+          if [ "$want" != "$got" ]; then
+            echo "::warning::套件版本不一致：仓内 $want / 机器 $got（本工作流不会自动覆盖机器）"
+          fi
+          {
+            echo "### 体检"
+            echo ""
+            echo "| 项 | 值 |"
+            echo "|---|---|"
+            printf '%s\n' "$OUT" | sed -n 's/^HOST=/| 主机 | /p' | sed 's/$/ |/'
+            printf '%s\n' "$OUT" | sed -n 's/^UPTIME=/| 开机于 | /p' | sed 's/$/ |/'
+            printf '%s\n' "$OUT" | sed -n 's/^PORTAL=/| 门户 HTTP | /p' | sed 's/$/ |/'
+            printf '%s\n' "$OUT" | sed -n 's/^KIT_VER=/| 套件版本 | /p' | sed 's/$/ |/'
+            echo "| 套件 sha | 仓内 \`$want\` / 机器 \`$got\` |"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ─────────────────────────────────────────── 1. 契约 + 核
+  core:
+    name: 核（thomas-core + 可选 gfcc 钉）
+    needs: preflight
+    if: ${{ !inputs.verify_only && !inputs.skip_core }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 触发 thomas-core deploy-106 并等待
+        run: |
+          set -euo pipefail
+          chmod +x scripts/*.sh
+          args=(--ref "${{ inputs.core_ref }}")
+          [ -n "${{ inputs.core_sha }}" ] && args+=(-f "sha=${{ inputs.core_sha }}")
+          [ -n "${{ inputs.gfcc_ref }}" ] && args+=(-f "gfcc_ref=${{ inputs.gfcc_ref }}")
+          ./scripts/trigger-and-wait.sh GenzLTD/thomas-core deploy-106.yml "${args[@]}"
+
+  # ─────────────────────────────────────────── 2. 宿主
+  looma:
+    name: 宿主（looma）
+    needs: core
+    if: ${{ !inputs.verify_only && !inputs.skip_looma && (needs.core.result == 'success' || needs.core.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 触发 looma-zervi deploy-106 并等待
+        run: |
+          set -euo pipefail
+          chmod +x scripts/*.sh
+          args=(--ref "${{ inputs.looma_ref }}")
+          [ -n "${{ inputs.looma_sha }}" ] && args+=(-f "sha=${{ inputs.looma_sha }}")
+          ./scripts/trigger-and-wait.sh GenzLTD/looma-zervi deploy-106.yml "${args[@]}"
+
+  # ─────────────────────────────────────────── 3. 基础设施
+  infra:
+    name: 基础设施
+    needs: [core, looma]
+    if: ${{ always() && !inputs.verify_only && inputs.run_infra && (needs.core.result != 'failure') && (needs.looma.result != 'failure') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 幂等执行 infra
+        run: |
+          set -uo pipefail
+          chmod +x scripts/106.sh
+          ./scripts/106.sh --sudo "cd $KIT_DIR && ./bootstrap.sh infra" 2>&1 | tail -40
+
+      - name: 按需重启（新单元进进程）
+        if: ${{ inputs.restart_services }}
+        run: |
+          set -uo pipefail
+          ./scripts/106.sh --sudo "systemctl restart thomas-core gfcc-kernel looma-backend; sleep 5; systemctl is-active thomas-core gfcc-kernel looma-backend" 2>&1
+
+      - name: 记录
+        if: ${{ always() }}
+        run: |
+          {
+            echo "### 基础设施"
+            echo ""
+            echo "- 已执行 \`bootstrap.sh infra\`（幂等：内容一致则不动）"
+            echo "- 重启服务：\`${{ inputs.restart_services }}\`"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ─────────────────────────────────────────── 4. 验收
+  verify:
+    name: 验收
+    needs: [core, looma, infra]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 套件 verify + 三段链路
+        run: |
+          set -uo pipefail
+          chmod +x scripts/106.sh
+          fail=0
+
+          echo "── 套件 verify ──"
+          ./scripts/106.sh --sudo "cd $KIT_DIR && ./bootstrap.sh verify" > /tmp/v.log 2>&1 || fail=1
+          tail -20 /tmp/v.log
+
+          echo "── 服务与链路 ──"
+          cat > /tmp/link.sh <<'EOS'
+          bad=""
+          for s in nginx looma-backend thomas-core gfcc-kernel; do
+            st=$(systemctl is-active "$s" 2>/dev/null)
+            [ "$st" = "active" ] || bad="$bad $s($st)"
+          done
+          echo "INACTIVE=${bad:-(none)}"
+          echo "LOOMA=$(curl -s -m 5 http://127.0.0.1:5200/health | tr -d '\n' | sed -n 's/.*"git_commit": *"\([0-9a-f]\{7\}\).*/\1/p' | head -1)"
+          echo "CORE=$(curl -s -m 5 http://127.0.0.1:5300/health | tr -d '\n' | sed -n 's/.*"git_commit": *"\([0-9a-f]\{7\}\).*/\1/p' | head -1)"
+          echo "PORTAL=$(curl -s -m 5 -o /dev/null -w '%{http_code}' -H 'Host: szbolent.com' http://127.0.0.1/)"
+          echo "OUTBOX=$(sqlite3 -readonly /home/ubuntu/looma/data/looma.db 'select group_concat(status||":"||n) from (select status,count(*) n from signal_outbox group by status)' 2>/dev/null || echo 'n/a')"
+          echo "BIND=$(ss -ltn | awk '$4 ~ /:(5200|5211)$/ {print $4}' | tr '\n' ' ')"
+          EOS
+          L=$(./scripts/106.sh --sudo "$(cat /tmp/link.sh)" 2>&1) || { echo "$L"; fail=1; }
+          echo "$L"
+
+          inactive=$(printf '%s\n' "$L" | sed -n 's/^INACTIVE=//p')
+          if [ -n "$inactive" ] && [ "$inactive" != "(none)" ]; then
+            echo "::error::以下服务未 active:$inactive"
+            fail=1
+          fi
+          portal=$(printf '%s\n' "$L" | sed -n 's/^PORTAL=//p')
+          [ "$portal" = "200" ] || { echo "::error::门户返回 $portal"; fail=1; }
+
+          # gfcc 那条腿只观察不判死（已知 dlq 未清，见 README 已知缺口）
+          outbox=$(printf '%s\n' "$L" | sed -n 's/^OUTBOX=//p')
+          case "$outbox" in
+            *dlq*|*pending*) echo "::warning::looma→gfcc 队列未清：$outbox" ;;
+          esac
+
+          {
+            echo "### 验收"
+            echo ""
+            echo "| 项 | 值 |"
+            echo "|---|---|"
+            printf '%s\n' "$L" | sed -n 's/^INACTIVE=/| 未 active | /p' | sed 's/$/ |/'
+            printf '%s\n' "$L" | sed -n 's/^LOOMA=/| looma sha | /p' | sed 's/$/ |/'
+            printf '%s\n' "$L" | sed -n 's/^CORE=/| core sha | /p' | sed 's/$/ |/'
+            printf '%s\n' "$L" | sed -n 's/^PORTAL=/| 门户 | /p' | sed 's/$/ |/'
+            printf '%s\n' "$L" | sed -n 's/^OUTBOX=/| 信号队列 | /p' | sed 's/$/ |/'
+            printf '%s\n' "$L" | sed -n 's/^BIND=/| 回环绑定 | /p' | sed 's/$/ |/'
+            echo ""
+            echo '```'
+            tail -18 /tmp/v.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          exit $fail

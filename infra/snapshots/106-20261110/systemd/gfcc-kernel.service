@@ -1,0 +1,16 @@
+[Unit]
+Description=gfcc-kernel localhost :5211
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/gfcc-kernel
+EnvironmentFile=/home/ubuntu/gfcc-kernel/.env
+ExecStart=/home/ubuntu/gfcc-kernel/bin/run-gfcc-kernel.sh
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

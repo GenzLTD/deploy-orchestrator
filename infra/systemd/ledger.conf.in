@@ -1,0 +1,6 @@
+[Service]
+# 账本 drop-in：把核的 DATABASE_PATH 指到宿主那份 looma.db，实现「一本账」。
+# 主单元里的 core.db 被这条覆盖；重装主单元时必须保留本 drop-in，否则账本会分裂成两本。
+Environment=DATABASE_PATH=@LOOMA_DIR@/data/looma.db
+ReadWritePaths=@THOMAS_DIR@
+ReadWritePaths=@LOOMA_DIR@/data

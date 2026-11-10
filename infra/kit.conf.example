@@ -1,0 +1,25 @@
+# kit.conf —— 本机专属参数（不进 git，复制为 kit.conf 后按机器改）
+# 优先级：命令行参数 > kit.conf > 脚本内置默认值
+#   —— v2.2 起 kit.conf 在参数解析**之前**加载，所以上面这句话是真的。
+#      v2.1 及以前加载在解析之后，kit.conf 会静默盖掉命令行（已修）。
+# 不要在这里写 CMD（preflight/infra/…），子命令只认命令行。
+# 查看会渲染出什么：sudo ./bootstrap.sh render --out=/tmp/r && diff -r /tmp/r snapshots/106-20261110
+
+# ---- 106 生产机（腾讯云 / Ubuntu 22.04 + deadsnakes） ----
+# APP_USER=ubuntu
+# LOOMA_PORT=5200
+# CORE_PORT=5300
+# GFCC_PORT=5211
+# WP_UPSTREAM=45.76.84.90
+# NGINX_MODE=auto
+# TAKE_DEFAULT=1
+
+# ---- 法兰克福预发机（Vultr / Ubuntu 22.04 / 已有 docker staging 占 5200、gfcc 占 5211） ----
+# 与既有栈共存：换端口 + 不碰 nginx + 单元加前缀，避免覆盖在跑的服务
+# APP_USER=linuxuser
+# LOOMA_PORT=6200
+# CORE_PORT=6300
+# GFCC_PORT=6211
+# UNIT_PREFIX=shadow-
+# NGINX_MODE=skip
+# WITH_PPA=no

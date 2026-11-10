@@ -1,0 +1,32 @@
+[Unit]
+Description=thomas-core - THOMAS 认证/身份/合规/RAG 核服务
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@APP_USER@
+Group=@APP_GROUP@
+WorkingDirectory=@THOMAS_DIR@/current/backend
+# 两个 env 文件：.env 存真实凭据（运维面维护，600，CI 不碰）；
+# deploy.env 由部署脚本每次写入 GIT_COMMIT（对齐 /health 的 git_commit 口径）
+EnvironmentFile=-@THOMAS_DIR@/.env
+EnvironmentFile=-@THOMAS_DIR@/deploy.env
+Environment=THOMAS_SCHEMA_SPLIT=1
+Environment=FLASK_PORT=@CORE_PORT@
+# 这里先写核自己的 core.db；真正生效的账本是 ledger.conf drop-in 覆盖后的 looma.db。
+# 保留这行是为了「没有 drop-in 也能起来」，两处必须成对维护。
+Environment=DATABASE_PATH=@THOMAS_DIR@/data/core.db
+ExecStart=@THOMAS_DIR@/.venv/bin/python run_core.py
+Restart=on-failure
+RestartSec=3
+StandardOutput=append:@THOMAS_DIR@/logs/thomas-core.log
+StandardError=append:@THOMAS_DIR@/logs/thomas-core.log
+
+# 基础加固：app 只写自家目录，不需要新特权
+NoNewPrivileges=true
+ProtectSystem=full
+ReadWritePaths=@THOMAS_DIR@
+
+[Install]
+WantedBy=multi-user.target

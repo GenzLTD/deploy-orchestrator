@@ -1,0 +1,17 @@
+[Unit]
+Description=gfcc-kernel localhost :@GFCC_PORT@
+After=network.target
+
+[Service]
+Type=simple
+User=@APP_USER@
+Group=@APP_GROUP@
+WorkingDirectory=@GFCC_DIR@
+EnvironmentFile=-@GFCC_DIR@/.env
+Environment=GFCC_PORT=@GFCC_PORT@
+ExecStart=@GFCC_DIR@/bin/run-gfcc-kernel.sh
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,25 @@
+[Unit]
+Description=looma-backend - 合拢宿主（本机 5200，由 Nginx 对外）
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/looma/current/backend
+EnvironmentFile=/home/ubuntu/looma/.env
+EnvironmentFile=/home/ubuntu/looma/deploy.env
+Environment=FLASK_PORT=5200
+ExecStart=/home/ubuntu/looma/.venv/bin/gunicorn -b 127.0.0.1:5200 --workers 1 --timeout 90 run:app
+Restart=on-failure
+RestartSec=3
+StandardOutput=append:/home/ubuntu/looma/logs/looma-backend.log
+StandardError=append:/home/ubuntu/looma/logs/looma-backend.log
+
+NoNewPrivileges=true
+ProtectSystem=full
+ReadWritePaths=/home/ubuntu/looma
+
+[Install]
+WantedBy=multi-user.target

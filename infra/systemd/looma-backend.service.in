@@ -1,0 +1,27 @@
+[Unit]
+Description=looma-backend - 合拢宿主（本机 @LOOMA_PORT@，由 Nginx 对外）
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@APP_USER@
+Group=@APP_GROUP@
+WorkingDirectory=@LOOMA_DIR@/current/backend
+# 「-」前缀 = 文件不存在不报错。CI 首次部署前 deploy.env 尚未生成，
+# 无前缀会让单元直接起不来（v1 的隐患）。
+EnvironmentFile=-@LOOMA_DIR@/.env
+EnvironmentFile=-@LOOMA_DIR@/deploy.env
+Environment=FLASK_PORT=@LOOMA_PORT@
+ExecStart=@LOOMA_DIR@/.venv/bin/gunicorn -b 127.0.0.1:@LOOMA_PORT@ --workers 1 --timeout 90 run:app
+Restart=on-failure
+RestartSec=3
+StandardOutput=append:@LOOMA_DIR@/logs/looma-backend.log
+StandardError=append:@LOOMA_DIR@/logs/looma-backend.log
+
+NoNewPrivileges=true
+ProtectSystem=full
+ReadWritePaths=@LOOMA_DIR@
+
+[Install]
+WantedBy=multi-user.target

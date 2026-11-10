@@ -1,0 +1,24 @@
+[Service]
+# ============================================================================
+# kit drop-in：只做一件事——让「.env 还不存在」不成为单元起不来的理由。
+#
+# 为什么必须放 drop-in 而不是写进主单元：
+#   looma-backend 与 gfcc-kernel 的主单元会被各自仓的部署脚本重写，
+#   主单元里的 `EnvironmentFile=-` 和 `Environment=GFCC_PORT=` 下次 CI 就没了；
+#   thomas-core 的主单元 CI 不重装，但也不能只靠「CI 恰好不重装」这种运气。
+#   drop-in 没人在 CI 里动，所以它才是这两条设置的正确落点。
+#
+# 为什么先 `EnvironmentFile=` 空赋值：
+#   EnvironmentFile 是列表型指令，空赋值 = 清空列表；随后重新按本文件的清单装载，
+#   这样即使 CI 的主单元写成无 `-` 前缀的 EnvironmentFile，也不会因文件缺失而启动失败。
+#   ⚠️ 代价：主单元里的 EnvironmentFile 清单从此由本文件接管。
+#      若 CI 日后新增读一个别的 env 文件，必须同步加到这里，否则会被静默丢掉。
+# ============================================================================
+EnvironmentFile=
+EnvironmentFile=-@ENVFILE1@
+# >>> ENVFILE2_BEGIN
+EnvironmentFile=-@ENVFILE2@
+# <<< ENVFILE2_END
+# >>> EXTRA_ENV_BEGIN
+Environment=GFCC_PORT=@GFCC_PORT@
+# <<< EXTRA_ENV_END
