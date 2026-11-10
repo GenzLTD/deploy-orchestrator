@@ -73,23 +73,26 @@ Looma 部署段**不需要先把 8 个提交合进 main**。
 
 ## 四、交接待办（按顺序）
 
-### 1. 把 106 上的套件升到 v2.3（先做这个）
+### 1. ~~把 106 上的套件升到 v2.3~~ ✅ 已完成（2026-11-10 22:14，Dell 侧）
 
-`infra` 段执行的是 `cd /home/ubuntu/106-deploy-kit && ./bootstrap.sh infra`，即**机器上那份 v2.1**。仓里带的 v2.3 只在体检时比 sha，不参与执行。只覆盖脚本、不跑任何子命令，线上产物零改动：
+原风险是：`infra` 段执行 `cd /home/ubuntu/106-deploy-kit && ./bootstrap.sh infra`，用的是**机器上那份 v2.1**，仓里的 v2.3 只参与比 sha。已处理：
 
-```bash
-cd ~ && rm -rf /tmp/k && mkdir /tmp/k \
-  && python3 -m zipfile -e 106-deploy-kit-v2.3.zip /tmp/k \
-  && cp /tmp/k/106-deploy-kit/bootstrap.sh ~/106-deploy-kit/ \
-  && cp -r /tmp/k/106-deploy-kit/tests ~/106-deploy-kit/ \
-  && bash ~/106-deploy-kit/tests/selfcheck.sh
-```
+| 项 | 结果 |
+|---|---|
+| `bootstrap.sh` | `40d9c09d…` → **`7676443b25c40515…`**，原文件备份为 `bootstrap.sh.bak-20261110-221427` |
+| `tests/` | 已补到 `~/106-deploy-kit/tests/`（机器上原本没有） |
+| selfcheck | **8/8 通过**（在 106 上，bash 5.1.16） |
+| preflight | **exit 0**，三单元 + 三 drop-in 全部识别 |
+| 模板一致性 | systemd / nginx / env-templates / snapshots **全部与仓内逐字节一致**（只有 `kit.conf.example` 示例文件不同，不影响执行） |
+| 线上产物 | **零改动**（只换脚本，未跑 infra/secrets） |
 
-期望 `40d9c09d…` → `7676443b25c40515…`，selfcheck 8/8。
+验证证据：run `42832181952` 的体验段已打印 `套件版本不一致` warning 消失，验收段输出 `[bootstrap] === verify（v2.3.0）===`。
 
-### 2. 改 infra 段：不再信机器上的脚本
+**这一步不用再做了。**
 
-当前 `infra` job 直接执行机器上的 `bootstrap.sh`。建议改为先用仓内 `infra/bootstrap.sh` 覆盖远端再执行（可加 `sha256sum` 比对，不一致才传）。这需要改 `.github/workflows/deploy-all.yml` 并推一版 —— 只改编排仓，不碰项目仓。
+### 2. 改 infra 段：不再信机器上的脚本（可选，已缓解）
+
+第 1 项做完后，机器上的脚本已与仓内一致，**当前不阻塞部署**。但这是靠手动同步维持的，下次改 `bootstrap.sh` 又会漂移。可选改进：infra 段执行前先用仓内 `infra/bootstrap.sh` 覆盖远端（加 `sha256sum` 比对，不一致才传）。需要改 `.github/workflows/deploy-all.yml` 并推一版 —— 只改编排仓，不碰项目仓。
 
 ### 3. 修断腿：looma → gfcc 信号
 
@@ -113,3 +116,41 @@ gh workflow run deploy-all.yml -R GenzLTD/deploy-orchestrator \
 ## 五、悬着的状态（需要决策，不属本次交接执行范围）
 
 `LOOMA=62cfa10` 说明 106 上跑的是那 8 个提交构建的版本，而 `main` 头仍是 `6e3d329`。**代码已在生产跑，主线里没有**。短期无碍（部署走分支 ref），长期隐患：任何人从 main 触发部署会把线上回退。是否合 main 另行决策，**不要为消 diverged 而合**。
+
+---
+
+## 六、关于"首次 dispatch 失败"——不是配额问题
+
+曾出现 job `steps=0`、`runner` 空、4 秒失败，容易被误判成 Actions 配额耗尽。**实测不是**：
+
+| run | 情形 | attempt 1 | attempt 2 |
+|---|---|---|---|
+| `42822485115` | 仓创建后 6 分钟触发 | failure（steps=0） | **success** |
+| `42829779973` | 改 visibility 后 1 分钟触发 | failure（steps=0） | **success** |
+| `42832181952` | 仓稳定后触发 | **success（一次过）** | — |
+
+规律：仓库**刚创建**或**刚改可见性**之后的首次 dispatch 会瞬时调度失败，重跑或等几分钟即恢复。看到 `steps=0` 不要先怀疑代码或配额，先重跑一次。
+
+配额数据仅作参考：11 月 Actions Linux 用量 2347 分钟，Free 组织额度 2000 分钟，但 Linux 单价 $0.008 分钟、`netAmount` 为 0，未构成阻断——上面的实测已经证伪了"配额锁死"。
+
+---
+
+## 七、当前可部署状态（Dell 侧已解锁）
+
+| 检查项 | 状态 |
+|---|---|
+| 五项配置 | ✅ 齐（`配置齐全；SSH 用户=ubuntu`） |
+| 目标仓 `deploy-106.yml` 可 dispatch | ✅ thomas-core(main) / looma-zervi(feat/core-selfcontained) |
+| 分支头与线上一致（幂等） | ✅ core `35f0465` / looma `62cfa10` |
+| 106 套件版本 | ✅ `7676443b`（v2.3.0） |
+| 跨仓互斥 | ✅ 两仓均 0 个 run 在跑 |
+| 编排仓可运行 | ✅ 私有仓，`attempt=1` 直接 success |
+
+按默认参数触发即为**真部署**（`verify_only` 默认 `false`、`skip_*` 默认 `false`、`run_infra` 默认 `true`）：
+
+```bash
+gh workflow run deploy-all.yml -R GenzLTD/deploy-orchestrator \
+  -f restart_services=true
+```
+
+`restart_services` 默认 `false`，只决定 infra 跑完是否重启三服务，不挡部署；要新单元进进程就显式打开。注意这一步会真部署 thomas-core `main` 与 looma `feat/core-selfcontained` 到 106——因两头与线上一致，属幂等重部署，不改变线上版本。
