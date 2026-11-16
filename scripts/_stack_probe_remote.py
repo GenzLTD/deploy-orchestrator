@@ -50,11 +50,31 @@ cur = Path("/home/ubuntu/gfcc-kernel/current")
 if cur.exists():
     gfcc = cur.resolve().name
 
+# Prefer THOMAS_CORE_PIN (true code tip) over /health.git_commit which may
+# echo a mislabeled release directory name (looma export).
+core_pin = ""
+for pin_path in (
+    Path("/home/ubuntu/thomas/current/backend/THOMAS_CORE_PIN"),
+    Path("/home/ubuntu/thomas/current/THOMAS_CORE_PIN"),
+):
+    if pin_path.exists():
+        core_pin = pin_path.read_text(errors="ignore").splitlines()[0].strip()
+        break
+
+core_health = health("http://127.0.0.1:5300/health").get("git_commit") or ""
+core_deploy = unit_sha("/home/ubuntu/thomas/deploy.env")
+rel_label = ""
+cur = Path("/home/ubuntu/thomas/current")
+if cur.exists():
+    rel_label = cur.resolve().name
+
 print(json.dumps({
     "looma_sha": health("http://127.0.0.1:5200/health").get("git_commit")
                  or unit_sha("/home/ubuntu/looma/deploy.env"),
-    "core_sha": health("http://127.0.0.1:5300/health").get("git_commit")
-                or unit_sha("/home/ubuntu/thomas/deploy.env"),
+    "core_sha": core_pin or core_health or core_deploy,
+    "core_health_git_commit": core_health,
+    "core_release_dir": rel_label,
+    "core_pin_file": core_pin,
     "gfcc_sha": gfcc,
     "bind": binds(),
     "kit_version": kit,

@@ -36,7 +36,7 @@
 | 单元 | 目录 / tip | 监听 | /health |
 |---|---|---|---|
 | `looma-backend` | `~/looma` → `d35ccbb…` | `127.0.0.1:5200` gunicorn | 200 · `deploy_track=looma` · deepseek · `qcc_configured=true` |
-| `thomas-core` | `~/thomas` → `381042d2…` | **`0.0.0.0:5300`** python `run_core.py` | 200 · `service=thomas-core` · `bridge_configured` · `chroma_ok`；账本 drop-in 指到 `~/looma/data/looma.db`（一本账） |
+| `thomas-core` | `~/thomas` · 代码钉 **`35f0465`**（树内 `THOMAS_CORE_PIN`）；`current` 目录名曾误为 looma `381042d2…` | **`0.0.0.0:5300`** python `run_core.py` | 200 · `service=thomas-core` · `bridge_configured` · `chroma_ok`；账本 drop-in 指到 `~/looma/data/looma.db`（一本账）；`/health.git_commit` 若报 381042d2 为目录标签误报 |
 | `gfcc-kernel` | `~/gfcc-kernel` → `09d9e835…` | `127.0.0.1:5211` uvicorn | 200 · `gfcc_kernel` v1.1.0 |
 
 | 其它 | 结果 |
@@ -77,7 +77,7 @@ nginx 意图：App 继续打 `/v1/*` + `/health`；团队看板仅回环可见�
 |---|---|---|
 | 形态 | **systemd 三件套**：looma + thomas-core + gfcc-kernel（无业务 Docker 容器） | **Docker**：`looma-backend` + `gfcc-kernel` + redis + chromadb；**无**本机 `:5300` thomas 进程 |
 | 轨 | `deploy_track=looma` · CN | `vultr` · `stack-v0.1.20` |
-| tip/pin | looma `d35ccbb`；thomas `381042d2`；gfcc `09d9e835` | looma stack `6ca4db35` + `looma_sha=d35ccbb` join_pin；gfcc image `stage-3dcb0846…` |
+| tip/pin | looma `d35ccbb`；thomas 代码钉 `35f0465`（非目录名 381042d2）；gfcc `09d9e835` | looma stack `6ca4db35` + `looma_sha=d35ccbb` join_pin；gfcc image `stage-3dcb0846…` |
 | LLM | deepseek | openai 优先 |
 | QCC | configured true | configured false |
 | Stripe | 无 | US providers 有 |
@@ -305,3 +305,4 @@ ssh looma-106 'systemctl is-active looma-backend; curl -sS http://127.0.0.1:5200
 |---|---|
 | 2026-11-16 | 首版：C + 容忍 mock + 保留预演；基线与私密通道；10 条可解性与补齐指引 |
 | 2026-11-16 | 复核：更正「106 只有 looma」——实为 looma+thomas+gfcc 三件套；SG 为 Docker looma+gfcc（无 :5300）；公网门面为 403 非 404 |
+| 2026-11-16 | thomas tip：清单改为代码钉 `35f0465`；现网 `current` 目录名 `381042d2` 为 looma 树误标，`THOMAS_CORE_PIN` 为准 |
