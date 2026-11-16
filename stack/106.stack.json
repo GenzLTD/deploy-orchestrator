@@ -7,8 +7,8 @@
   "notes": [
     "首期不对齐 Docker：学 SG 的同版语义与回环，仍用 systemd 三件套。",
     "支付/stub/灌数冻结见 docs/106_STACK_ALIGN_SCOPE.md。",
-    "thomas :5300 现网曾绑 0.0.0.0——stack 验收要求回环；未达标只告警直到核仓改绑落地。",
-    "2026-11-16 复核：~/thomas/current 目录名曾为 looma 提交 381042d2，但树内 THOMAS_CORE_PIN 与 run_core.py 哈希均指向 thomas-core@35f0465；/health.git_commit 若仍报 381042d2 为目录标签误报，不以之为核 tip。"
+    "thomas :5300 已随 thomas-core#1（c2e854ce）回环 127.0.0.1；对齐项 A 关闭。",
+    "2026-11-16 现网：release_dir / health.git_commit / tip 均为 c2e854ce（合入 bind-loopback）；旧 381042d2 误标目录已退役。"
   ],
   "components": {
     "looma": {
@@ -25,11 +25,9 @@
       "dir": "/home/ubuntu/thomas",
       "port": 5300,
       "bind": "127.0.0.1",
-      "sha": "35f04659718edb3518e14d97a84e237dfa1307a9",
-      "sha_kind": "code_pin",
+      "sha": "c2e854ce646b6f725f8b953fd128644f019eb459",
+      "sha_kind": "deploy_tip",
       "repo": "GenzLTD/thomas-core",
-      "release_dir_label": "381042d2fac253c628230a955d0d48b7ed5dac43",
-      "release_dir_label_kind": "looma_tree_export_mislabel",
       "pin_file": "backend/THOMAS_CORE_PIN",
       "health": "http://127.0.0.1:5300/health",
       "ledger": "/home/ubuntu/looma/data/looma.db"
