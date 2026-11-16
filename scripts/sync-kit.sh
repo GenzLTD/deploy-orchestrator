@@ -15,13 +15,12 @@ PORT="${DEPLOY106_SSH_PORT:-22}"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
-tar -C "$ROOT/infra" -czf "$work/kit.tgz" \
-  bootstrap.sh systemd nginx env-templates tests \
-  kit.conf.example README.md
-# 部署手册.md 可能因编码缺席，有则追加
+# gzip 包不能 tar -r 追加（GNU tar: Cannot update compressed archives）
+extra=()
 if [ -f "$ROOT/infra/部署手册.md" ]; then
-  tar -C "$ROOT/infra" -rzf "$work/kit.tgz" 部署手册.md
+  extra+=("部署手册.md")
 fi
+tar -C "$ROOT/infra" -czf "$work/kit.tgz"   bootstrap.sh systemd nginx env-templates tests   kit.conf.example README.md   "${extra[@]}"
 
 keyfile="$work/key"
 if [ -f "$DEPLOY106_SSH_KEY" ]; then
