@@ -90,10 +90,10 @@ printf 'LOOMA_PORT=9999\nCORE_PORT=9998\n' > "$T/kit.conf"
 "$T/bootstrap.sh" render --offline --user=ubuntu --base=/home/ubuntu --looma-port=5200 --out="$T/o" \
   >/dev/null 2>&1
 if [ -f "$T/o/systemd/looma-backend.service" ]; then
-  got="$(find "$T/o" -type f -exec grep -ho '127\.0\.0\.1:[0-9][0-9]*' {} + 2>/dev/null \
-         | sed 's/.*://' | sort -u | tr '\n' ' ')"
+  got="$(grep -rhoE '127\.0\.0\.1:[0-9]+|FLASK_PORT=[0-9]+' "$T/o" 2>/dev/null \
+         | sed -E 's/.*(127\.0\.0\.1:|FLASK_PORT=)//' | sort -u | tr '\n' ' ')"
   case "$got" in
-    *5200*9998*) ok "kit.conf 优先级正确（命令行 5200 赢、kit.conf 9998 生效）：${got}" ;;
+    *5200*9998*| *9998*5200*) ok "kit.conf 优先级正确（命令行 5200 赢、kit.conf 9998 生效）：${got}" ;;
     *)           bad "kit.conf 优先级异常，渲染端口为：${got}（期望含 5200 与 9998）" ;;
   esac
 else

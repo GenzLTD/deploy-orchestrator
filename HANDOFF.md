@@ -1,9 +1,26 @@
 # deploy-orchestrator 交接单
 
-**日期**：2026-11-10
-**仓库**：https://github.com/GenzLTD/deploy-orchestrator（私有，`main` 已推 30 文件）
-**状态**：仓已建、配置已齐、首次 `verify_only` 全绿（`attempt=2`）
-**交接范围**：以下 5 项修复与真链路验证由 Mac 侧执行，Dell 侧不再跟进。
+**日期**：2026-11-10（正文） / **2026-11-16 续**（stack 对齐迭代）  
+**仓库**：https://github.com/GenzLTD/deploy-orchestrator  
+**状态**：仓已建；2026-11-16 起在本仓落地 stack 清单、sync-kit、门面限源（kit 2.4.0）  
+**范围**：[`docs/106_STACK_ALIGN_SCOPE.md`](docs/106_STACK_ALIGN_SCOPE.md)
+
+### 2026-11-16 续（编排仓迭代，未改项目仓）
+
+| 项 | 状态 |
+|---|---|
+| `stack/106.stack.json` 钉 looma/thomas/gfcc tip | ✅ 已入仓（as_of 现网） |
+| `scripts/stack-status.sh` / `sync-kit.sh` | ✅ |
+| infra 段先 sync-kit 再 bootstrap | ✅ workflow 已改 |
+| nginx 门面回环限源 | ✅ `looma.conf.in` + kit 2.4.0 |
+| thomas `:5300` → `127.0.0.1` | ⏳ **仍属 thomas-core 代码改动**；编排只 warn |
+| 支付 / mock | 冻结，见 followup |
+
+建议下一刀：`verify_only=true` 干跑 → 确认 sync-kit 后 kit=2.4.0；thomas 回环另开核仓 PR。
+
+---
+
+**原交接（2026-11-10）**：以下 5 项修复与真链路验证由 Mac 侧执行，Dell 侧不再跟进。
 
 ---
 

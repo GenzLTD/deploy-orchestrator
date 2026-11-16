@@ -1,0 +1,57 @@
+{
+  "$schema_comment": "106 stack 钉版清单。编排仓真相源；不持密钥。改 tip 须整组发布/回滚，勿只改单项。",
+  "name": "106-mainland",
+  "host": "106.52.73.17",
+  "as_of": "2026-11-16",
+  "phase": "align-systemd",
+  "notes": [
+    "首期不对齐 Docker：学 SG 的同版语义与回环，仍用 systemd 三件套。",
+    "支付/stub/灌数冻结见 docs/106_STACK_ALIGN_SCOPE.md。",
+    "thomas :5300 现网曾绑 0.0.0.0——stack 验收要求回环；未达标只告警直到核仓改绑落地。"
+  ],
+  "components": {
+    "looma": {
+      "unit": "looma-backend",
+      "dir": "/home/ubuntu/looma",
+      "port": 5200,
+      "bind": "127.0.0.1",
+      "sha": "d35ccbb837bfab01891904db68052b15625f0f9c",
+      "sha_kind": "deploy_tip",
+      "health": "http://127.0.0.1:5200/health"
+    },
+    "thomas": {
+      "unit": "thomas-core",
+      "dir": "/home/ubuntu/thomas",
+      "port": 5300,
+      "bind": "127.0.0.1",
+      "sha": "381042d2fac253c628230a955d0d48b7ed5dac43",
+      "health": "http://127.0.0.1:5300/health",
+      "ledger": "/home/ubuntu/looma/data/looma.db"
+    },
+    "gfcc": {
+      "unit": "gfcc-kernel",
+      "dir": "/home/ubuntu/gfcc-kernel",
+      "port": 5211,
+      "bind": "127.0.0.1",
+      "sha": "09d9e835a0fbd9c1334c029a2fc72a50e5eea648",
+      "health": "http://127.0.0.1:5211/health"
+    }
+  },
+  "kit": {
+    "remote_dir": "/home/ubuntu/106-deploy-kit",
+    "version": "2.4.0",
+    "source": "infra/"
+  },
+  "frozen": {
+    "payment_wechat_merchant": true,
+    "payment_stub_reopen": true,
+    "stripe_on_106": true,
+    "mock_data_backfill": true,
+    "public_api_board": true
+  },
+  "orchestration": {
+    "order": ["gfcc-pin-optional", "thomas-core", "looma", "infra", "verify"],
+    "docker_required": false,
+    "thomas_in_stack": true
+  }
+}

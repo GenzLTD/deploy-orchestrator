@@ -44,7 +44,7 @@ set -euo pipefail
 
 KIT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # 刻意不叫 VERSION：preflight 会 source /etc/os-release，那个文件里也有 VERSION
-KIT_VERSION="2.3.0"
+KIT_VERSION="2.4.0"
 TS="$(date +%Y%m%d-%H%M%S)"
 # 允许用环境变量伪造主机类型：仅用于在 Linux 上回归「站错机器」分支，正常运行不要设
 HOST_OS="${BOOTSTRAP_HOST_OS:-$(uname -s 2>/dev/null || echo unknown)}"
@@ -911,6 +911,34 @@ verify() {
     local code
     code="$(curl -s -m 5 -o /dev/null -w '%{http_code}' -H "Host: szbolent.com" "http://127.0.0.1/" || true)"
     [ "$code" = "200" ] && say "门户 200 ✅" || warn "门户返回 ${code}（dist 未发布？）"
+  fi
+
+  # v2.4：stack 对齐 — 三端口应绑回环。:5300 现网曾为 0.0.0.0，未达标只 warn（对齐项 A，核仓改绑后应变绿）。
+  local bind_line port addr
+  bind_line="$(ss -ltn 2>/dev/null || true)"
+  for port in "$LOOMA_PORT" "$GFCC_PORT" "$CORE_PORT"; do
+    addr="$(printf '%s\n' "$bind_line" | awk -v suf=":$port" '
+      {
+        n = length($4); m = length(suf);
+        if (n >= m && substr($4, n - m + 1) == suf) { print $4; exit }
+      }')"
+    case "${addr}" in
+      127.0.0.1:*|\[::1\]:*) say "绑定 ${addr} OK" ;;
+      0.0.0.0:*|\*:*)        warn "绑定 ${addr} (expect 127.0.0.1:${port}) - stack align A" ;;
+      "")                    warn "not listening :${port}" ;;
+      *)                     warn "绑定 ${addr} (expect loopback)" ;;
+    esac
+  done
+
+  # 门面限源：公网语义下 IP 直连 / 与 /v1/endpoints 应为 403（本机回环可为 200）
+  if [ "$NGINX_MODE" != "skip" ]; then
+    local board
+    board="$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1/" || true)"
+    case "${board}" in
+      200) say "board loopback / -> 200 OK" ;;
+      403) warn "board loopback / -> 403 (ACL too strict or no proxy)" ;;
+      *)   warn "board loopback / -> ${board}" ;;
+    esac
   fi
 
   # v2.1：原来只要响应里出现 "invalid code" 就判 ✅。那只证明宿主把请求发出去了，
