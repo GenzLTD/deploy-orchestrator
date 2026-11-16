@@ -9,8 +9,6 @@ chmod +x "$ROOT/scripts/106.sh"
 
 : "${DEPLOY106_HOST:?DEPLOY106_HOST 未设置}"
 : "${DEPLOY106_SSH_KEY:?DEPLOY106_SSH_KEY 未设置}"
-APP_USER="${DEPLOY106_USER:-ubuntu}"
-PORT="${DEPLOY106_SSH_PORT:-22}"
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
@@ -20,21 +18,15 @@ extra=()
 if [ -f "$ROOT/infra/部署手册.md" ]; then
   extra+=("部署手册.md")
 fi
-tar -C "$ROOT/infra" -czf "$work/kit.tgz"   bootstrap.sh systemd nginx env-templates tests   kit.conf.example README.md   "${extra[@]}"
+tar -C "$ROOT/infra" -czf "$work/kit.tgz" \
+  bootstrap.sh systemd nginx env-templates tests \
+  kit.conf.example README.md \
+  "${extra[@]}"
 
-keyfile="$work/key"
-if [ -f "$DEPLOY106_SSH_KEY" ]; then
-  cp "$DEPLOY106_SSH_KEY" "$keyfile"
-else
-  printf '%s\n' "$DEPLOY106_SSH_KEY" > "$keyfile"
-fi
-chmod 600 "$keyfile"
-
-scp -i "$keyfile" -P "$PORT" -o IdentitiesOnly=yes -o BatchMode=yes \
-  -o StrictHostKeyChecking=yes \
-  "$work/kit.tgz" "${APP_USER}@${DEPLOY106_HOST}:/tmp/deploy-kit.tgz"
-
+# 经 106.sh 传包（复用指纹钉死）；勿裸 scp（Actions runner 无该主机 known_hosts）
+B64=$(base64 -w0 "$work/kit.tgz")
 "$ROOT/scripts/106.sh" "set -euo pipefail
+printf '%s' '$B64' | base64 -d > /tmp/deploy-kit.tgz
 KIT='${KIT_DIR}'
 ts=\$(date +%Y%m%d-%H%M%S)
 if [ -d \"\$KIT\" ]; then cp -a \"\$KIT\" \"\${KIT}.bak-\$ts\"; fi
