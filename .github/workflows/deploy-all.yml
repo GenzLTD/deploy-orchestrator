@@ -154,7 +154,7 @@ jobs:
             printf '%s\n' "$OUT" | sed -n 's/^CORE=/| thomas | /p' | sed 's/$/ |/'
             printf '%s\n' "$OUT" | sed -n 's/^GFCC=/| gfcc | /p' | sed 's/$/ |/'
             printf '%s\n' "$OUT" | sed -n 's/^PORTAL=/| 门户 HTTP | /p' | sed 's/$/ |/'
-            printf '%s\n' "$OUT" | sed -n 's/^BOARD=/| 门面回环 / | /p' | sed 's/$/ |/'
+            printf '%s\n' "$OUT" | sed -n 's#^BOARD=#| 门面回环 / | #p' | sed 's/$/ |/'
             printf '%s\n' "$OUT" | sed -n 's/^BIND5300=/| thomas 绑定 | /p' | sed 's/$/ |/'
             printf '%s\n' "$OUT" | sed -n 's/^KIT_VER=/| 套件版本 | /p' | sed 's/$/ |/'
             echo "| 套件 sha | 仓内 \`$want\` / 机器 \`$got\` |"
@@ -294,7 +294,7 @@ jobs:
             printf '%s\n' "$L" | sed -n 's/^LOOMA=/| looma sha | /p' | sed 's/$/ |/'
             printf '%s\n' "$L" | sed -n 's/^CORE=/| core sha | /p' | sed 's/$/ |/'
             printf '%s\n' "$L" | sed -n 's/^PORTAL=/| 门户 | /p' | sed 's/$/ |/'
-            printf '%s\n' "$L" | sed -n 's/^BOARD=/| 门面回环 / | /p' | sed 's/$/ |/'
+            printf '%s\n' "$L" | sed -n 's#^BOARD=#| 门面回环 / | #p' | sed 's/$/ |/'
             printf '%s\n' "$L" | sed -n 's/^OUTBOX=/| 信号队列 | /p' | sed 's/$/ |/'
             printf '%s\n' "$L" | sed -n 's/^BIND=/| 监听 | /p' | sed 's/$/ |/'
             echo ""
