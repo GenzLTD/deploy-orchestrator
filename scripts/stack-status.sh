@@ -28,7 +28,14 @@ scp -i "$keyfile" -P "$PORT" -o IdentitiesOnly=yes -o BatchMode=yes \
   "$ROOT/scripts/_stack_probe_remote.py" \
   "${APP_USER}@${DEPLOY106_HOST}:/tmp/_stack_probe_remote.py"
 
-REMOTE_JSON="$("$ROOT/scripts/106.sh" 'python3 /tmp/_stack_probe_remote.py; rm -f /tmp/_stack_probe_remote.py')"
+# 106.sh 会往 stdout 打「主机身份已钉…」，只取最后一行 JSON
+REMOTE_RAW="$("$ROOT/scripts/106.sh" 'python3 /tmp/_stack_probe_remote.py; rm -f /tmp/_stack_probe_remote.py')"
+REMOTE_JSON="$(printf '%s\n' "$REMOTE_RAW" | awk '/^\{/{line=$0} END{print line}')"
+if [ -z "$REMOTE_JSON" ]; then
+  echo "探测失败，未拿到 JSON：" >&2
+  printf '%s\n' "$REMOTE_RAW" >&2
+  exit 1
+fi
 
 export STACK_LOCK_PATH="$LOCK"
 printf '%s\n' "$REMOTE_JSON" | python3 "$ROOT/scripts/_stack_compare.py"
