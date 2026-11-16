@@ -29,6 +29,21 @@ for name, key in (("looma", "looma_sha"), ("thomas", "core_sha"), ("gfcc", "gfcc
     gs = (g[:12] + "…") if g and len(g) > 12 else (g or "?")
     print(f"| {name} | `{ws}` | `{gs}` | {'OK' if good else 'DRIFT'} |")
 
+# Surface mislabel if health/dir disagree with pin
+if got.get("core_pin_file") or got.get("core_release_dir"):
+    print()
+    print("thomas provenance:")
+    print(f"  pin_file:     {got.get('core_pin_file') or '?'}")
+    print(f"  health.git:   {got.get('core_health_git_commit') or '?'}")
+    print(f"  release_dir:  {got.get('core_release_dir') or '?'}")
+    pin = got.get("core_pin_file") or ""
+    label = got.get("core_release_dir") or ""
+    hg = got.get("core_health_git_commit") or ""
+    if pin and label and not (label.startswith(pin[:7]) or pin.startswith(label[:7])):
+        print("  note: release_dir label != code pin (known looma-tree mislabel)")
+    if pin and hg and not match(pin, hg):
+        print("  note: /health.git_commit != THOMAS_CORE_PIN (treat pin as authority)")
+
 kit_ok = got.get("kit_version") == want["kit"]
 ok = ok and kit_ok
 print(f"| kit | `{want['kit']}` | `{got.get('kit_version') or '?'}` | {'OK' if kit_ok else 'DRIFT'} |")

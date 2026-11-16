@@ -19,7 +19,7 @@
 | 组件 | 现形态 | tip / 监听 |
 |---|---|---|
 | looma-backend | systemd · `~/looma` | `d35ccbb` · `127.0.0.1:5200` |
-| thomas-core | systemd · `~/thomas` | `381042d2` · **`0.0.0.0:5300`**（债） |
+| thomas-core | systemd · `~/thomas` | 代码钉 **`35f0465`**（`THOMAS_CORE_PIN`）；目录名曾误标 looma `381042d2` · **`0.0.0.0:5300`**（债） |
 | gfcc-kernel | systemd · `~/gfcc-kernel` | `09d9e835` · `127.0.0.1:5211` |
 | Docker | 引擎在 · **0 容器 / 0 镜像** | 非现网业务路径 |
 | 入口 | nginx :80 | 只反代 looma；门面 `/`、`/v1/endpoints` 仅回环 |
