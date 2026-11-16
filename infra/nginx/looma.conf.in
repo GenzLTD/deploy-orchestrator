@@ -1,5 +1,5 @@
 # 宿主只听 127.0.0.1:@LOOMA_PORT@。按 IP 进来的默认站点只放行 App 用的接口。
-# 根路径是团队内部 API 看板，不向公网提供。
+# 根路径与 /v1/endpoints 是团队内部 API 看板：仅本机（含 SSH 隧道）可看。
 # 核（:@CORE_PORT@）与 gfcc（:@GFCC_PORT@）不在这里反代。
 #
 # @DEFAULT_FLAG@ 由 bootstrap.sh 决定：
@@ -13,12 +13,44 @@ server {
 
     client_max_body_size 20m;
 
+    # 团队门面：只允许回环（ssh -L …:127.0.0.1:80）
+    location = / {
+        allow 127.0.0.1;
+        allow ::1;
+        deny all;
+        proxy_pass http://127.0.0.1:@LOOMA_PORT@;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 30s;
+    }
+
     location = /v1/endpoints {
-        return 404;
+        allow 127.0.0.1;
+        allow ::1;
+        deny all;
+        proxy_pass http://127.0.0.1:@LOOMA_PORT@;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 30s;
     }
 
     location = /v1/endpoints/ {
-        return 404;
+        allow 127.0.0.1;
+        allow ::1;
+        deny all;
+        proxy_pass http://127.0.0.1:@LOOMA_PORT@;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 30s;
     }
 
     location /v1/ {

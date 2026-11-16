@@ -1,7 +1,9 @@
-# 106-deploy-kit v2.3
+# 106-deploy-kit v2.4
 
 目标机部署套件（nginx / systemd / .env / 账本 drop-in + 只读验收）。
-入口文档是中文名的 `部署手册.md`（bootstrap kit v2.3）。**本包不含任何密钥值。**
+入口文档是中文名的 `部署手册.md`。**本包不含任何密钥值。**
+
+v2.4：门面 `/` 与 `/v1/endpoints` 仅回环可访问；`verify` 增加三端口绑定探测（`:5300` 非回环只 warn）。
 
 ## 解压
 

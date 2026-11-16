@@ -1,6 +1,8 @@
 # deploy-orchestrator
 
-106（`106.52.73.17`）的**一层编排入口**。它自己不部署任何东西，只负责按正确顺序调用别人的部署、等到结束、把结果摊成一张表。
+106（`106.52.73.17`）的**一层编排入口**。它自己不部署应用代码，只负责按正确顺序调用别人的部署、同步基础设施套件、等到结束、把结果摊成一张表。
+
+**Stack 对齐（2026-11-16）**：见 [`docs/106_STACK_ALIGN_SCOPE.md`](docs/106_STACK_ALIGN_SCOPE.md) 与钉版清单 [`stack/106.stack.json`](stack/106.stack.json)。首期学 SG 的「同版 + 回环」，**仍用 systemd 三件套**（looma + thomas + gfcc），不强制 Docker；支付/mock 冻结。
 
 ## 为什么需要它
 
@@ -117,25 +119,32 @@ gh workflow run deploy-all.yml -R GenzLTD/deploy-orchestrator \
 | `infra` | ssh 执行 `bootstrap.sh infra`（幂等：内容一致则不动） | 停，但仍进验收（看现场） |
 | `verify` | 套件 `verify` + 服务/门户/队列/绑定汇总 | 失败即整条红，`::error::` 点名 |
 
+## Stack 清单与本地探测
+
+```bash
+# 对照 stack/106.stack.json 只读探测（tip / kit / 绑定）
+./scripts/stack-status.sh
+
+# 仅把仓内 infra/ 同步到机器套件目录（备份后覆盖；不跑 infra、不重启）
+./scripts/sync-kit.sh
+```
+
+`deploy-all` 的 **infra 段会先 `sync-kit`**，再 `bootstrap.sh infra`，消除「仓新、机器旧」双源。
+
+门面私密通道（nginx 仅回环放行 `/` 与 `/v1/endpoints`）：本机 `ssh -L 18080:127.0.0.1:80 …` 后打开 `http://127.0.0.1:18080/`。
+
 ## 已知缺口（本仓不掩盖）
 
 | 缺口 | 现状 | 影响 |
 |---|---|---|
-| looma → gfcc 信号腿断 | `signal_outbox`：`dlq:3, pending:2`，全因 `missing_gfcc_secret`（宿主侧 `SIGNAL_INGEST_SECRET` 为空） | 人格信标发不出去。`verify` 只给 `::warning::`，不判死——**这是已知未修，不是新故障** |
-| 核绑 `0.0.0.0:5300` | `run_core.py` 未改绑回环，公网边界只靠安全组 | 需改代码，不在部署层解决 |
-| 套件双源 | `infra/` 是 git 副本，机器上 `/home/ubuntu/106-deploy-kit` 是运行态 | `preflight` 会比对 sha 并在不一致时 `::warning::`，**不自动覆盖**机器 |
-| 跨仓互斥只在编排层 | 三仓 CI 的 `concurrency` 不互通 | 手动跑某一仓的 deploy 时，编排层发现不了正在跑的反向情况 |
+| looma → gfcc 信号腿断 | `signal_outbox` dlq/pending，常见 `missing_gfcc_secret` | `verify` 只 `::warning::`，不判死 |
+| 核绑 `0.0.0.0:5300` | **stack 对齐项 A**：需 `thomas-core` 改回环；编排层只告警 | 公网边界现靠安全组 |
+| 跨仓互斥只在编排层 | 三仓 CI 的 `concurrency` 不互通 | 手动跑某一仓 deploy 时编排层看不见 |
+| 支付 / mock | 口径冻结，见 followup 指南 | 不在本仓解决 |
 
-### 手工同步套件到机器（需要时）
+### 套件版本
 
-```bash
-cd deploy-orchestrator
-scp -r infra ubuntu@106.52.73.17:/home/ubuntu/106-deploy-kit.new
-ssh ubuntu@106.52.73.17 'set -e; ts=$(date +%Y%m%d-%H%M%S); \
-  mv /home/ubuntu/106-deploy-kit /home/ubuntu/106-deploy-kit.bak-$ts; \
-  mv /home/ubuntu/106-deploy-kit.new /home/ubuntu/106-deploy-kit; \
-  chmod +x /home/ubuntu/106-deploy-kit/bootstrap.sh'
-```
+`infra/` = kit **v2.4.0**（门面限源 + 绑定探测）。机器应以 `sync-kit` / infra 段与仓一致。
 
 ## 本地干跑（不上 GitHub 也能验）
 
@@ -152,4 +161,5 @@ export DEPLOY106_HOST_FINGERPRINT="SHA256:..."
 
 ## 变更记录
 
-- v1（2026-11-10）：首版。preflight → core（含 gfcc 钉）→ looma → infra → verify。两个内置 bug 在 106 真机干跑时抓出并修掉：核 `/health` 多行 JSON 导致 sha 提取失败、`systemctl is-active` 只返回状态词导致误判四项全挂。
+- v1.1（2026-11-16）：stack 对齐迭代——`stack/106.stack.json`、`stack-status` / `sync-kit`、infra 段先同步套件、nginx 门面回环限源（kit 2.4.0）、验收增加 `:5300` 绑定与门面探测；范围文档入仓。
+- v1（2026-11-10）：首版。preflight → core（含 gfcc 钉）→ looma → infra → verify。

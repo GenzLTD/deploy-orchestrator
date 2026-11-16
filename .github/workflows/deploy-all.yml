@@ -109,7 +109,7 @@ jobs:
             exit 1
           fi
 
-      - name: 线上现状 + 套件版本核对
+      - name: 线上现状 + 套件版本核对 + stack 清单
         run: |
           set -uo pipefail
           chmod +x scripts/106.sh
@@ -118,17 +118,30 @@ jobs:
           echo "UPTIME=$(uptime -s)"
           echo "LOOMA=$(curl -s -m 5 http://127.0.0.1:5200/health | tr -d '\n' | sed -n 's/.*"git_commit": *"\([0-9a-f]\{7\}\).*/\1/p' | head -1)"
           echo "CORE=$(curl -s -m 5 http://127.0.0.1:5300/health | tr -d '\n' | sed -n 's/.*"git_commit": *"\([0-9a-f]\{7\}\).*/\1/p' | head -1)"
+          echo "GFCC=$(basename "$(readlink -f /home/ubuntu/gfcc-kernel/current 2>/dev/null)" 2>/dev/null | cut -c1-7)"
           echo "PORTAL=$(curl -s -m 5 -o /dev/null -w '%{http_code}' -H 'Host: szbolent.com' http://127.0.0.1/)"
+          echo "BOARD=$(curl -s -m 5 -o /dev/null -w '%{http_code}' http://127.0.0.1/)"
+          echo "BIND5300=$(ss -ltn | awk '$4 ~ /:5300$/ {print $4; exit}')"
           echo "KIT_SHA=$(sha256sum /home/ubuntu/106-deploy-kit/bootstrap.sh 2>/dev/null | cut -c1-16)"
           echo "KIT_VER=$(grep -m1 KIT_VERSION= /home/ubuntu/106-deploy-kit/bootstrap.sh 2>/dev/null | cut -d'"' -f2)"
           EOS
           OUT=$(./scripts/106.sh "$(cat /tmp/probe.sh)" 2>&1) || { echo "$OUT"; exit 1; }
           echo "$OUT"
-          # 仓内副本与机器上的套件比 sha：不一致只告警（仓可能是新提交、机器还没跟上）
+          # 仓内副本与机器上的套件比 sha：不一致只告警；infra 段会先 sync-kit
           want=$(sha256sum infra/bootstrap.sh | cut -c1-16)
           got=$(printf '%s\n' "$OUT" | sed -n 's/^KIT_SHA=//p')
           if [ "$want" != "$got" ]; then
-            echo "::warning::套件版本不一致：仓内 $want / 机器 $got（本工作流不会自动覆盖机器）"
+            echo "::warning::套件版本不一致：仓内 $want / 机器 $got（infra 段会先 sync-kit）"
+          fi
+          bind5300=$(printf '%s\n' "$OUT" | sed -n 's/^BIND5300=//p')
+          case "$bind5300" in
+            127.0.0.1:5300|[::1]:5300) ;;
+            0.0.0.0:5300|*:5300) echo "::warning::thomas 绑 $bind5300（stack 对齐项 A：应改 127.0.0.1）" ;;
+            *) echo "::warning::thomas :5300 绑定异常：$bind5300" ;;
+          esac
+          # 与 stack/106.stack.json 短 tip 对照（只摘要，不阻断）
+          if [ -f stack/106.stack.json ]; then
+            echo "STACK_LOCK as_of=$(python3 -c 'import json;print(json.load(open("stack/106.stack.json"))["as_of"])')"
           fi
           {
             echo "### 体检"
@@ -137,7 +150,12 @@ jobs:
             echo "|---|---|"
             printf '%s\n' "$OUT" | sed -n 's/^HOST=/| 主机 | /p' | sed 's/$/ |/'
             printf '%s\n' "$OUT" | sed -n 's/^UPTIME=/| 开机于 | /p' | sed 's/$/ |/'
+            printf '%s\n' "$OUT" | sed -n 's/^LOOMA=/| looma | /p' | sed 's/$/ |/'
+            printf '%s\n' "$OUT" | sed -n 's/^CORE=/| thomas | /p' | sed 's/$/ |/'
+            printf '%s\n' "$OUT" | sed -n 's/^GFCC=/| gfcc | /p' | sed 's/$/ |/'
             printf '%s\n' "$OUT" | sed -n 's/^PORTAL=/| 门户 HTTP | /p' | sed 's/$/ |/'
+            printf '%s\n' "$OUT" | sed -n 's/^BOARD=/| 门面回环 / | /p' | sed 's/$/ |/'
+            printf '%s\n' "$OUT" | sed -n 's/^BIND5300=/| thomas 绑定 | /p' | sed 's/$/ |/'
             printf '%s\n' "$OUT" | sed -n 's/^KIT_VER=/| 套件版本 | /p' | sed 's/$/ |/'
             echo "| 套件 sha | 仓内 \`$want\` / 机器 \`$got\` |"
             echo ""
@@ -184,6 +202,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: 同步仓内套件到机器（消除双源漂移）
+        run: |
+          set -euo pipefail
+          chmod +x scripts/106.sh scripts/sync-kit.sh
+          ./scripts/sync-kit.sh
       - name: 幂等执行 infra
         run: |
           set -uo pipefail
@@ -237,7 +260,8 @@ jobs:
           echo "CORE=$(curl -s -m 5 http://127.0.0.1:5300/health | tr -d '\n' | sed -n 's/.*"git_commit": *"\([0-9a-f]\{7\}\).*/\1/p' | head -1)"
           echo "PORTAL=$(curl -s -m 5 -o /dev/null -w '%{http_code}' -H 'Host: szbolent.com' http://127.0.0.1/)"
           echo "OUTBOX=$(sqlite3 -readonly /home/ubuntu/looma/data/looma.db 'select group_concat(status||":"||n) from (select status,count(*) n from signal_outbox group by status)' 2>/dev/null || echo 'n/a')"
-          echo "BIND=$(ss -ltn | awk '$4 ~ /:(5200|5211)$/ {print $4}' | tr '\n' ' ')"
+          echo "BIND=$(ss -ltn | awk '$4 ~ /:(5200|5211|5300)$/ {print $4}' | tr '\n' ' ')"
+          echo "BOARD=$(curl -s -m 5 -o /dev/null -w '%{http_code}' http://127.0.0.1/)"
           EOS
           L=$(./scripts/106.sh --sudo "$(cat /tmp/link.sh)" 2>&1) || { echo "$L"; fail=1; }
           echo "$L"
@@ -249,6 +273,11 @@ jobs:
           fi
           portal=$(printf '%s\n' "$L" | sed -n 's/^PORTAL=//p')
           [ "$portal" = "200" ] || { echo "::error::门户返回 $portal"; fail=1; }
+
+          bind=$(printf '%s\n' "$L" | sed -n 's/^BIND=//p')
+          case "$bind" in
+            *0.0.0.0:5300*) echo "::warning::thomas 仍监听 0.0.0.0:5300（stack 对齐项 A）" ;;
+          esac
 
           # gfcc 那条腿只观察不判死（已知 dlq 未清，见 README 已知缺口）
           outbox=$(printf '%s\n' "$L" | sed -n 's/^OUTBOX=//p')
@@ -265,11 +294,12 @@ jobs:
             printf '%s\n' "$L" | sed -n 's/^LOOMA=/| looma sha | /p' | sed 's/$/ |/'
             printf '%s\n' "$L" | sed -n 's/^CORE=/| core sha | /p' | sed 's/$/ |/'
             printf '%s\n' "$L" | sed -n 's/^PORTAL=/| 门户 | /p' | sed 's/$/ |/'
+            printf '%s\n' "$L" | sed -n 's/^BOARD=/| 门面回环 / | /p' | sed 's/$/ |/'
             printf '%s\n' "$L" | sed -n 's/^OUTBOX=/| 信号队列 | /p' | sed 's/$/ |/'
-            printf '%s\n' "$L" | sed -n 's/^BIND=/| 回环绑定 | /p' | sed 's/$/ |/'
+            printf '%s\n' "$L" | sed -n 's/^BIND=/| 监听 | /p' | sed 's/$/ |/'
             echo ""
             echo '```'
-            tail -18 /tmp/v.log
+            tail -24 /tmp/v.log
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
