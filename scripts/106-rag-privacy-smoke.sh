@@ -81,9 +81,9 @@ case "$code" in
     err="$(jq -r '.error // ""' "$ask_body")"
     [[ "$err" != "null" ]] || undetermined "ask.error is null"
 
-    # egress 白名单：local_only | cloud_allowed（dual 轨）；其余值不可判定
+    # egress 白名单：local_only | cloud_ok（dual 轨）；其余值不可判定
     case "$egress" in
-      local_only|cloud_allowed) ;;
+      local_only|cloud_ok) ;;
       *) undetermined "unexpected ask.egress value: $egress" ;;
     esac
 
