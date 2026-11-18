@@ -1,0 +1,17 @@
+# 本机 P2 dry-run 影子边车：避开 ServBay :11434，绑定 127.0.0.1:21434
+# 不上 106。用法见 scripts/p2-ollama-privacy-dryrun.sh
+#
+# 模型：默认挂 MODELS_DIR（脚本会把 ServBay 模型 APFS COW 到 ~/Library/Caches/…）。
+# Docker Desktop 不能直接挂 /Applications/ServBay，勿写死该路径。
+name: looma-ollama-shadow
+services:
+  ollama:
+    image: ollama/ollama@sha256:910d0d8107b538fb0894e63163eb195de0cc7aefcbc666dc62d3b18f71124592
+    container_name: looma-ollama-shadow
+    restart: "no"
+    ports:
+      - "127.0.0.1:21434:11434"
+    volumes:
+      - ${MODELS_DIR:?set MODELS_DIR to a Docker-shareable models dir}:/root/.ollama/models
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434

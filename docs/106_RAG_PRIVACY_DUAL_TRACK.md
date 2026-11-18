@@ -29,35 +29,24 @@
 
 放置：`/home/ubuntu/ollama/`（与 `~/looma` 并列）。须 jun 授权后再执行。
 
-```yaml
-# /home/ubuntu/ollama/docker-compose.yml（示意）
-name: looma-ollama
-services:
-  ollama:
-    image: ollama/ollama:latest   # 授权后钉 digest
-    container_name: looma-ollama
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:11434:11434"   # 仅回环
-    volumes:
-      - ollama-data:/root/.ollama
-    environment:
-      - OLLAMA_HOST=0.0.0.0:11434
-volumes:
-  ollama-data:
-```
+真相源 compose：`infra/ollama/docker-compose.yml`（镜像钉 digest，禁止 `latest`）。
 
 ```bash
 ssh -i ~/.ssh/deploy106_looma ubuntu@106.52.73.17   # 或显式 -i 本机钥
 
-cd /home/ubuntu/ollama
+# 上机前：本机先跑 scripts/p2-ollama-privacy-dryrun.sh（Docker 影子 :21434，复用本机模型、默认不 pull）三项全绿
+install -d /home/ubuntu/ollama
+# 自编排仓 sync：infra/ollama/docker-compose.yml → ~/ollama/docker-compose.yml
+cd /home/ubuntu/olloma
 docker compose up -d
 docker exec looma-ollama ollama pull qwen2.5-coder:1.5b
 docker exec looma-ollama ollama pull nomic-embed-text:latest
 
 # 探活（勿用 /health 的 providers_configured.ollama）
+curl -sS http://127.0.0.1:11434/api/version
 curl -sS http://127.0.0.1:11434/api/tags | head
 ss -lntp | grep 11434   # 必须只有 127.0.0.1
+docker inspect looma-ollama --format '{{.Config.Image}}'   # 须含 @sha256:
 ```
 
 备选：裸机 `curl -fsSL https://ollama.com/install.sh | sh`（等价；本窗优先边车以便钉镜像）。
@@ -100,9 +89,15 @@ curl -sS http://127.0.0.1:5300/health | jq '{ollama_ok,rag_privacy_mode,rag_clou
 ```bash
 # 或本机：./scripts/106-rag-privacy-smoke.sh
 # A. 隐私轨：有命中 + Ollama 正常 → llm_provider=ollama，egress=local_only
-#    Ollama 停掉 → error=rag_local_required，不得回落云
 # B. 公开轨 poetry → egress=cloud_ok（dual）
 # C. health.ollama_ok == true
+
+# 负向（V11 / fail-closed）——可执行命令（须授权窗；停前告知 Dell）
+docker stop looma-ollama
+# 期望：隐私 Ask → error=rag_local_required，llm_provider != deepseek
+./scripts/106-rag-privacy-smoke.sh || true
+docker start looma-ollama
+# 正向（V12）：边车恢复后 ollama_ok=true，隐私轨可本地生成
 ```
 
 ---

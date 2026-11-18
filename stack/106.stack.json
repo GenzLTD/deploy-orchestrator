@@ -2,13 +2,13 @@
   "$schema_comment": "106 stack 钉版清单。编排仓真相源；不持密钥。改 tip 须整组发布/回滚，勿只改单项。",
   "name": "106-mainland",
   "host": "106.52.73.17",
-  "as_of": "2026-11-16",
-  "phase": "align-systemd",
+  "as_of": "2026-11-18",
+  "phase": "align-systemd+ollama-sidecar",
   "notes": [
-    "首期不对齐 Docker：学 SG 的同版语义与回环，仍用 systemd 三件套。",
+    "业务面仍用 systemd 三件套（looma + thomas + gfcc）；Ollama 仅 Docker 边车，禁止整栈 compose 替换。",
     "支付/stub/灌数冻结见 docs/106_STACK_ALIGN_SCOPE.md。",
-    "thomas :5300 已随 thomas-core#1（c2e854ce）回环 127.0.0.1；对齐项 A 关闭。",
-    "2026-11-16 现网：release_dir / health.git_commit / tip 均为 c2e854ce（合入 bind-loopback）；旧 381042d2 误标目录已退役。"
+    "looma tip 对齐分轨合入 61a99245（#55）；thomas tip 仍 c2e854ce，待分轨 tip 同步后改钉（D2）。",
+    "ollama 镜像钉 @sha256:910d0d81…（与 106 RepoDigests 一致）；compose 见 infra/ollama/docker-compose.yml。"
   ],
   "components": {
     "looma": {
@@ -16,7 +16,7 @@
       "dir": "/home/ubuntu/looma",
       "port": 5200,
       "bind": "127.0.0.1",
-      "sha": "d35ccbb837bfab01891904db68052b15625f0f9c",
+      "sha": "61a99245696d54632fd30a5be8a296ec252cb818",
       "sha_kind": "deploy_tip",
       "health": "http://127.0.0.1:5200/health"
     },
@@ -30,7 +30,8 @@
       "repo": "GenzLTD/thomas-core",
       "pin_file": "backend/THOMAS_CORE_PIN",
       "health": "http://127.0.0.1:5300/health",
-      "ledger": "/home/ubuntu/looma/data/looma.db"
+      "ledger": "/home/ubuntu/looma/data/looma.db",
+      "pending": "sync dual-track tip so /health exposes ollama_ok + rag_privacy_mode (Dell D2/V10)"
     },
     "gfcc": {
       "unit": "gfcc-kernel",
@@ -39,6 +40,19 @@
       "bind": "127.0.0.1",
       "sha": "09d9e835a0fbd9c1334c029a2fc72a50e5eea648",
       "health": "http://127.0.0.1:5211/health"
+    },
+    "ollama": {
+      "kind": "docker_sidecar",
+      "compose_dir": "/home/ubuntu/ollama",
+      "compose_source": "infra/ollama/docker-compose.yml",
+      "container": "looma-ollama",
+      "port": 11434,
+      "bind": "127.0.0.1",
+      "image": "ollama/ollama@sha256:910d0d8107b538fb0894e63163eb195de0cc7aefcbc666dc62d3b18f71124592",
+      "image_digest": "sha256:910d0d8107b538fb0894e63163eb195de0cc7aefcbc666dc62d3b18f71124592",
+      "models": ["qwen2.5-coder:1.5b", "nomic-embed-text:latest"],
+      "health": "http://127.0.0.1:11434/api/version",
+      "nginx_expose": false
     }
   },
   "kit": {
@@ -54,8 +68,10 @@
     "public_api_board": true
   },
   "orchestration": {
-    "order": ["gfcc-pin-optional", "thomas-core", "looma", "infra", "verify"],
+    "order": ["gfcc-pin-optional", "thomas-core", "looma", "infra", "ollama-sidecar-optional", "verify"],
     "docker_required": false,
-    "thomas_in_stack": true
+    "ollama_sidecar_optional": true,
+    "thomas_in_stack": true,
+    "deploy_all_requires_explicit_auth": true
   }
 }

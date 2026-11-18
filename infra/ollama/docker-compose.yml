@@ -1,0 +1,16 @@
+# 106 Ollama 边车（编排仓真相源；上机前须 dry-run 全绿）
+# 镜像钉 digest，禁止漂 latest。仅回环 127.0.0.1:11434。
+name: looma-ollama
+services:
+  ollama:
+    image: ollama/ollama@sha256:910d0d8107b538fb0894e63163eb195de0cc7aefcbc666dc62d3b18f71124592
+    container_name: looma-ollama
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
+volumes:
+  ollama-data:
