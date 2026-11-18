@@ -34,7 +34,7 @@
 ```bash
 ssh -i ~/.ssh/deploy106_looma ubuntu@106.52.73.17   # 或显式 -i 本机钥
 
-# 上机前：本机先跑 scripts/p2-ollama-privacy-dryrun.sh（影子 :21434）三项全绿
+# 上机前：本机先跑 scripts/p2-ollama-privacy-dryrun.sh（Docker 影子 :21434，复用本机模型、默认不 pull）三项全绿
 install -d /home/ubuntu/ollama
 # 自编排仓 sync：infra/ollama/docker-compose.yml → ~/ollama/docker-compose.yml
 cd /home/ubuntu/olloma

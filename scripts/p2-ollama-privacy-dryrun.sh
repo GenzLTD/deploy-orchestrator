@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
-# P2 dry-run（上机前置 · M8）：影子边车 :21434 + 出域拦截 + 三项断言
-# 须在非沙箱终端跑（Terminal.app / Cursor 本机终端均可；勿用无 Docker 的沙箱）。
-# 产出：EVIDENCE_DIR（默认 ~/Desktop/declare/evidence106/<ts>/）
+# P2 dry-run（上机前置 · M8）：本机 Docker 影子边车 :21434 + 出域拦截 + 三项断言
+# 须在非沙箱终端跑。产出：EVIDENCE_DIR（默认 ~/Desktop/declare/evidence106/<ts>/）
+#
+# 模型策略（默认零联网）：
+#   1) 复用 ServBay 模型目录（APFS COW 到 ~/Library/Caches，因 Docker 不能挂 /Applications）
+#   2) 或 MODELS_DIR=已有 models 目录
+#   3) 仅当缺模型且 ALLOW_NETWORK_PULL=1 才 docker exec ollama pull
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -11,7 +15,11 @@ EVIDENCE_DIR="${EVIDENCE_DIR:-$HOME/Desktop/declare/evidence106/$TS}"
 OLLAMA_HOST="${OLLAMA_HOST:-http://127.0.0.1:21434}"
 GEN_MODEL="${GEN_MODEL:-qwen2.5-coder:1.5b}"
 EMBED_MODEL="${EMBED_MODEL:-nomic-embed-text:latest}"
-IMAGE_PIN="ollama/ollama@sha256:910d0d8107b538fb0894e63163eb195de0cc7aefcbc666dc62d3b18f71124592"
+DIGEST="sha256:910d0d8107b538fb0894e63163eb195de0cc7aefcbc666dc62d3b18f71124592"
+IMAGE_PIN="ollama/ollama@${DIGEST}"
+SERVBAY_MODELS="${SERVBAY_MODELS:-/Applications/ServBay/db/ollama/models}"
+CACHE_MODELS="${CACHE_MODELS:-$HOME/Library/Caches/ollama-shadow-models/models}"
+ALLOW_NETWORK_PULL="${ALLOW_NETWORK_PULL:-0}"
 
 need() { command -v "$1" >/dev/null 2>&1 || { echo "missing: $1" >&2; exit 2; }; }
 need docker
@@ -22,13 +30,57 @@ need jq
 mkdir -p "$EVIDENCE_DIR"
 LOG="$EVIDENCE_DIR/dryrun.log"
 INTERCEPT="$EVIDENCE_DIR/intercept.jsonl"
-SUMMARY="$EVIDENCE_DIR/SUMMARY.md"
 exec > >(tee -a "$LOG") 2>&1
 
 echo "== P2 dry-run start $TS =="
 echo "EVIDENCE_DIR=$EVIDENCE_DIR"
 echo "OLLAMA_HOST=$OLLAMA_HOST"
-echo "IMAGE_PIN=$IMAGE_PIN"
+echo "DIGEST=$DIGEST"
+echo "ALLOW_NETWORK_PULL=$ALLOW_NETWORK_PULL"
+
+# Prefer already-local digest image (DaoCloud mirror tag ok)
+ensure_image() {
+  if docker image inspect "docker.m.daocloud.io/ollama/ollama@${DIGEST}" >/dev/null 2>&1; then
+    echo "image: local daocloud digest present"
+    return 0
+  fi
+  if docker image inspect "ollama/ollama@${DIGEST}" >/dev/null 2>&1; then
+    echo "image: local ollama digest present"
+    return 0
+  fi
+  if [[ "$ALLOW_NETWORK_PULL" == "1" ]]; then
+    echo "image: pulling digest via daocloud (ALLOW_NETWORK_PULL=1)"
+    docker pull "docker.m.daocloud.io/ollama/ollama@${DIGEST}"
+    return 0
+  fi
+  echo "FAIL: digest image not local; pull once with ALLOW_NETWORK_PULL=1 or docker pull daocloud mirror" >&2
+  exit 1
+}
+
+# Docker Desktop cannot mount /Applications → COW into ~/
+prepare_models_dir() {
+  if [[ -n "${MODELS_DIR:-}" && -d "$MODELS_DIR" ]]; then
+    echo "models: using MODELS_DIR=$MODELS_DIR"
+    return 0
+  fi
+  if [[ -d "$CACHE_MODELS/manifests" ]]; then
+    echo "models: reusing cache $CACHE_MODELS"
+    MODELS_DIR="$CACHE_MODELS"
+    export MODELS_DIR
+    return 0
+  fi
+  if [[ -d "$SERVBAY_MODELS/manifests" ]]; then
+    echo "models: APFS COW $SERVBAY_MODELS → $CACHE_MODELS (no network)"
+    mkdir -p "$(dirname "$CACHE_MODELS")"
+    rm -rf "$CACHE_MODELS"
+    cp -cR "$SERVBAY_MODELS" "$CACHE_MODELS"
+    MODELS_DIR="$CACHE_MODELS"
+    export MODELS_DIR
+    return 0
+  fi
+  echo "FAIL: no local models at $SERVBAY_MODELS or MODELS_DIR; set MODELS_DIR or ALLOW_NETWORK_PULL=1" >&2
+  exit 1
+}
 
 cleanup() {
   echo "== cleanup shadow =="
@@ -36,15 +88,31 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "== bring up shadow sidecar =="
-docker compose -f "$COMPOSE" up -d
-# wait ready
+ensure_image
+prepare_models_dir
+export MODELS_DIR
+
+echo "== bring up shadow sidecar (MODELS_DIR=$MODELS_DIR) =="
+# compose file pins ollama/ollama@digest; if only daocloud ref exists, retag for compose
+if ! docker image inspect "$IMAGE_PIN" >/dev/null 2>&1 \
+   && docker image inspect "docker.m.daocloud.io/ollama/ollama@${DIGEST}" >/dev/null 2>&1; then
+  # docker cannot `tag @digest` → run via explicit image override
+  docker rm -f looma-ollama-shadow >/dev/null 2>&1 || true
+  docker run -d --name looma-ollama-shadow --restart=no \
+    -p 127.0.0.1:21434:11434 \
+    -e OLLAMA_HOST=0.0.0.0:11434 \
+    -v "$MODELS_DIR:/root/.ollama/models" \
+    "docker.m.daocloud.io/ollama/ollama@${DIGEST}"
+else
+  docker compose -f "$COMPOSE" up -d
+fi
+
 for i in $(seq 1 60); do
   if curl -fsS "$OLLAMA_HOST/api/version" >/dev/null 2>&1; then
     echo "shadow ready after ${i}s"
     break
   fi
-  sleep 2
+  sleep 1
   if [[ "$i" -eq 60 ]]; then
     echo "FAIL: shadow ollama not ready" >&2
     exit 1
@@ -54,16 +122,30 @@ done
 curl -fsS "$OLLAMA_HOST/api/version" | tee "$EVIDENCE_DIR/api-version.json"
 docker inspect looma-ollama-shadow --format '{{.Config.Image}}' | tee "$EVIDENCE_DIR/image.txt"
 IMG="$(cat "$EVIDENCE_DIR/image.txt")"
-if [[ "$IMG" != *sha256:910d0d8107b538fb0894e63163eb195de0cc7aefcbc666dc62d3b18f71124592* ]]; then
+if [[ "$IMG" != *"$DIGEST"* ]]; then
   echo "FAIL: shadow image not digest-pinned: $IMG" >&2
   exit 1
 fi
 
-echo "== pull models (may take minutes) =="
-docker exec looma-ollama-shadow ollama pull "$GEN_MODEL"
-docker exec looma-ollama-shadow ollama pull "$EMBED_MODEL"
 curl -fsS "$OLLAMA_HOST/api/tags" | tee "$EVIDENCE_DIR/api-tags.json" >/dev/null
 jq -r '.models[].name' "$EVIDENCE_DIR/api-tags.json" | tee "$EVIDENCE_DIR/models.txt"
+if ! jq -e --arg g "$GEN_MODEL" --arg e "$EMBED_MODEL" \
+  '[.models[].name] | (index($g) != null) and (index($e) != null)' \
+  "$EVIDENCE_DIR/api-tags.json" >/dev/null; then
+  if [[ "$ALLOW_NETWORK_PULL" == "1" ]]; then
+    echo "== missing models; ALLOW_NETWORK_PULL=1 → pull =="
+    docker exec looma-ollama-shadow ollama pull "$GEN_MODEL"
+    docker exec looma-ollama-shadow ollama pull "$EMBED_MODEL"
+    curl -fsS "$OLLAMA_HOST/api/tags" | tee "$EVIDENCE_DIR/api-tags.json" >/dev/null
+    jq -r '.models[].name' "$EVIDENCE_DIR/api-tags.json" | tee "$EVIDENCE_DIR/models.txt"
+  else
+    echo "FAIL: required models not in mounted dir ($GEN_MODEL / $EMBED_MODEL); refuse network pull (ALLOW_NETWORK_PULL=0)" >&2
+    exit 1
+  fi
+else
+  echo "models: already present — skip pull"
+fi
+echo "models_source=$MODELS_DIR" | tee "$EVIDENCE_DIR/models-source.txt"
 
 echo "== item1+2+3: python intercept harness =="
 OLLAMA_HOST="$OLLAMA_HOST" GEN_MODEL="$GEN_MODEL" EMBED_MODEL="$EMBED_MODEL" \
@@ -292,6 +374,8 @@ lines = [
     f"- host: shadow {os.environ.get('OLLAMA_HOST', '')}",
     f"- image: {img}",
     f"- models: {models}",
+    f"- models_source: {(ev / 'models-source.txt').read_text().strip() if (ev / 'models-source.txt').exists() else 'n/a'}",
+    "- pull policy: reuse local / COW ServBay; network pull only if ALLOW_NETWORK_PULL=1",
     "",
     "| Item | Result |",
     "|---|---|",
