@@ -299,10 +299,21 @@ ssh looma-106 'systemctl is-active looma-backend; curl -sS http://127.0.0.1:5200
 
 ---
 
+## 6.1 Ask 隐私分轨（RAG 出境纪律）
+
+完整手册：[106_RAG_PRIVACY_DUAL_TRACK.md](./106_RAG_PRIVACY_DUAL_TRACK.md)
+
+定案摘要：`RAG_PRIVACY_MODE=dual`；`RAG_CLOUD_ALLOWED_COLLECTIONS=poetry_full`；隐私命中仅 Ollama，不可用则 `rag_local_required`（禁止回落云）。机上须装 Ollama 并在 `~/looma/.env` / `~/thomas/.env` 写入模板键；验收看 `/health` 的 `ollama_ok` 与 Ask 响应 `egress` / `llm_provider`。
+
+运维窗冒烟脚本（本机隧道或机上执行）：`scripts/106-rag-privacy-smoke.sh`。
+
+---
+
 ## 7. 变更记录
 
 | 日期 | 内容 |
 |---|---|
+| 2026-11-18 | Ask 隐私分轨：dual + poetry allowlist；Ollama 运维窗手册与 smoke 脚本 |
 | 2026-11-16 | 首版：C + 容忍 mock + 保留预演；基线与私密通道；10 条可解性与补齐指引 |
 | 2026-11-16 | 复核：更正「106 只有 looma」——实为 looma+thomas+gfcc 三件套；SG 为 Docker looma+gfcc（无 :5300）；公网门面为 403 非 404 |
 | 2026-11-16 | thomas tip：清单改为代码钉 `35f0465`；现网 `current` 目录名 `381042d2` 为 looma 树误标，`THOMAS_CORE_PIN` 为准 |
